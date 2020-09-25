@@ -11,8 +11,9 @@ would.
 (require '[aws-api-credential-providers.core :as providers])
 (require '[cognitect.aws.client.api :as aws])
 
-(def opts {:api :s3 :credential-provider (providers/credential-provider)})
+(def opts {:api :sts :credentials-provider (providers/credentials-provider)})
 (def client (aws/client opts))
+(def whoami (aws/invoke client {:op :GetCallerIdentity}))
 
 
 ```

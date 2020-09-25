@@ -23,12 +23,12 @@
   (contains? response :cognitect.anomalies/category))
 
 (defn expand-profile [profiles profile]
-  (loop [this (get profiles profile) chain [this]]
+  (loop [this (get profiles profile) chain (list this)]
     (if-some [pointer (get this "source_profile")]
       (if-some [source (get profiles pointer)]
-        (recur source (conj chain source))
-        (reduce merge {} (rseq chain)))
-      (reduce merge {} (rseq chain)))))
+        (recur source (cons source chain))
+        (reduce merge {} chain))
+      (reduce merge {} chain))))
 
 (defn parse [file]
   (let [base (c/parse file)]
@@ -55,7 +55,7 @@
                        client              (aws/client
                                              {:api                  :sts
                                               :http-client          http-client
-                                              :credentials-provider (profile-credentials-provider http-client f source-profile-name)})
+                                              :credentials-provider (profile-credentials-provider http-client source-profile-name f)})
                        response            (aws/invoke client
                                              {:op      :AssumeRole
                                               :request {:RoleArn         role-arn
@@ -81,11 +81,11 @@
   ([] (default-credentials-provider (aws/default-http-client)))
   ([http-client]
    (creds/chain-credentials-provider
-     [[(creds/environment-credentials-provider)
-       (creds/system-property-credentials-provider)
-       (profile-credentials-provider http-client)
-       (creds/container-credentials-provider http-client)
-       (creds/instance-profile-credentials-provider http-client)]])))
+     [(creds/environment-credentials-provider)
+      (creds/system-property-credentials-provider)
+      (profile-credentials-provider http-client)
+      (creds/container-credentials-provider http-client)
+      (creds/instance-profile-credentials-provider http-client)])))
 
 (def ^:private shared-credential-provider
   (delay (default-credentials-provider)))
