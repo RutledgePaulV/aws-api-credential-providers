@@ -34,13 +34,35 @@
   (let [base (c/parse file)]
     (into {} (map (fn [k] [k (expand-profile base k)])) (keys base))))
 
+(defn direct-auth [profile]
+  (creds/valid-credentials
+    {:aws/access-key-id     (get profile "aws_access_key_id")
+     :aws/secret-access-key (get profile "aws_secret_access_key")
+     :aws/session-token     (get profile "aws_session_token")}
+    "aws profiles file"))
+
+(defn assume-role-auth [http-client profile]
+  (let [role-arn     (get profile "role_arn")
+        session-name (or (get profile "role_session_name") (str (gensym "aws-api-session-")))
+        client       (aws/client
+                       {:api                  :sts
+                        :http-client          http-client
+                        :credentials-provider (reify creds/CredentialsProvider
+                                                (fetch [_] (direct-auth (dissoc profile "role_arn"))))})
+        response     (aws/invoke client {:op :AssumeRole :request {:RoleArn role-arn :RoleSessionName session-name}})]
+    (if (anomaly? response)
+      (throw (ex-info (format "Error assuming role %s" role-arn) {:response response}))
+      (creds/valid-credentials
+        {:aws/access-key-id             (get-in response [:Credentials :AccessKeyId])
+         :aws/secret-access-key         (get-in response [:Credentials :SecretAccessKey])
+         :aws/session-token             (get-in response [:Credentials :SessionToken])
+         :cognitect.aws.credentials/ttl (creds/calculate-ttl (get-in response [:Credentials]))}
+        "aws assume role using profiles file"))))
+
 (defn profile-credentials-provider
-  ([]
-   (profile-credentials-provider (aws/default-http-client)))
-  ([http-client]
-   (profile-credentials-provider http-client (get-aws-profile)))
-  ([http-client profile-name]
-   (profile-credentials-provider http-client profile-name (get-credential-file)))
+  ([] (profile-credentials-provider (aws/default-http-client)))
+  ([http-client] (profile-credentials-provider http-client (get-aws-profile)))
+  ([http-client profile-name] (profile-credentials-provider http-client profile-name (get-credential-file)))
   ([http-client profile-name ^File f]
    (creds/cached-credentials-with-auto-refresh
      (reify creds/CredentialsProvider
@@ -49,32 +71,10 @@
            (try
              (let [profile (get (parse f) profile-name)]
                (if (assume-role-profile? profile)
-                 (let [source-profile-name (get profile "source_profile")
-                       role-arn            (get profile "role_arn")
-                       session-name        (or (get profile "role_session_name") (str (gensym "aws-api-session-")))
-                       client              (aws/client
-                                             {:api                  :sts
-                                              :http-client          http-client
-                                              :credentials-provider (profile-credentials-provider http-client source-profile-name f)})
-                       response            (aws/invoke client
-                                             {:op      :AssumeRole
-                                              :request {:RoleArn         role-arn
-                                                        :RoleSessionName session-name}})]
-                   (if (anomaly? response)
-                     (throw (ex-info (format "Error assuming role %s using source profile %s" role-arn source-profile-name) {:response response}))
-                     (creds/valid-credentials
-                       {:aws/access-key-id             (get-in response [:Credentials :AccessKeyId])
-                        :aws/secret-access-key         (get-in response [:Credentials :SecretAccessKey])
-                        :aws/session-token             (get-in response [:Credentials :SessionToken])
-                        :cognitect.aws.credentials/ttl (creds/calculate-ttl (get-in response [:Credentials]))}
-                       "aws assume role using profiles file")))
-                 (creds/valid-credentials
-                   {:aws/access-key-id     (get profile "aws_access_key_id")
-                    :aws/secret-access-key (get profile "aws_secret_access_key")
-                    :aws/session-token     (get profile "aws_session_token")}
-                   "aws profiles file")))
+                 (assume-role-auth http-client profile)
+                 (direct-auth profile)))
              (catch Throwable t
-               (log/error t "Error fetching credentials from aws profiles file")))))))))
+               (log/error t (format "Error fetching credentials from aws profiles file for profile %s" profile-name))))))))))
 
 
 (defn default-credentials-provider
