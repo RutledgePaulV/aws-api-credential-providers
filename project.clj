@@ -1,4 +1,4 @@
-(defproject org.clojars.rutledgepaulv/aws-api-credential-providers "0.1.1-SNAPSHOT"
+(defproject org.clojars.rutledgepaulv/aws-api-credential-providers "0.1.1"
 
   :description
   "A library providing more featureful implementations of aws authentication providers for cognitect's aws-api library."
