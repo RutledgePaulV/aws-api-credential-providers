@@ -3,7 +3,7 @@
 
 An extension library for [aws-api](https://github.com/cognitect-labs/aws-api) providing credential providers suitable
 for more complex AWS authentication configurations. You might find this helpful if you need to assume IAM roles or use
-tools like saml2aws or AWS SSO.
+tools like saml2aws.
 
 ---
 
